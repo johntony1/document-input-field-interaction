@@ -323,9 +323,14 @@ export function ChatInput() {
   const [scrollTop, setScrollTop] = useState(0)
   const [attachment, setAttachment] = useState<Attachment | null>(null)
   const [wrapperHeight, setWrapperHeight] = useState(24)
+  const [dropdownPos, setDropdownPos] = useState<{ left: number; top: number }>(
+    { left: 0, top: 0 },
+  )
 
+  const containerRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const mirrorRef = useRef<HTMLDivElement>(null)
+  const wordMarkerRef = useRef<HTMLSpanElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const uploadFrameRef = useRef<number | null>(null)
   const reduceMotion = useReducedMotion()
@@ -379,6 +384,29 @@ export function ChatInput() {
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
+
+  // Position the dropdown directly below the trigger word. The hidden
+  // measurement mirror renders text up to currentWord.start followed by a
+  // zero-width marker span — its bounding rect gives the pixel position of
+  // where the trigger word begins, accounting for wrapping and scroll.
+  useLayoutEffect(() => {
+    if (!showDropdown) return
+    const marker = wordMarkerRef.current
+    const container = containerRef.current
+    if (!marker || !container) return
+    const mRect = marker.getBoundingClientRect()
+    const cRect = container.getBoundingClientRect()
+    // Horizontal: anchor to the trigger word's left position. Only clamp
+    // negative values; allow extending past the right edge so the dropdown
+    // stays under the trigger.
+    // Vertical: drop below the entire input field (the card), not below
+    // the trigger word's line — gives the dropdown breathing room.
+    const left = Math.max(0, mRect.left - cRect.left)
+    const top = container.offsetHeight + 8
+    setDropdownPos((prev) =>
+      prev.left === left && prev.top === top ? prev : { left, top },
+    )
+  })
 
   const syncMirrorScroll = useCallback(() => {
     const el = textareaRef.current
@@ -554,7 +582,7 @@ export function ChatInput() {
   const submitActive = hasText || (!!attachment && attachment.status === 'ready')
 
   return (
-    <div className="relative w-full max-w-[440px]">
+    <div ref={containerRef} className="relative w-full max-w-[440px]">
       <AnimatePresence>
         {showDropdown && (
           <motion.div
@@ -584,9 +612,13 @@ export function ChatInput() {
                   }
             }
             transition={SPRING_DROP}
-            style={{ transformOrigin: 'top center' }}
+            style={{
+              transformOrigin: 'top left',
+              left: dropdownPos.left,
+              top: dropdownPos.top,
+            }}
             className="
-              absolute top-[calc(100%+8px)] left-0
+              absolute
               w-[260px] max-w-full
               bg-white rounded-[12px] shadow-figma-card-focus
               p-[5px] z-20
@@ -641,7 +673,9 @@ export function ChatInput() {
                 }}
                 className="overflow-hidden"
               >
-                <div className="pb-[14px] flex items-start gap-[8px]">
+                {/* pt-[3px] gives the close button's -top-[2px] overhang
+                 * room inside the overflow-hidden collapse parent. */}
+                <div className="pt-[3px] pb-[14px] flex items-start gap-[8px]">
                   <AttachmentTile
                     attachment={attachment}
                     onRemove={removeAttachment}
@@ -677,7 +711,9 @@ export function ChatInput() {
 
               {/* Mirror — in flow, source of truth for content height.
                * Translated vertically to follow the textarea's scrollTop
-               * once content exceeds 250px. */}
+               * once content exceeds 250px. The transformed wrapper acts as
+               * a containing block so the measurement mirror's absolute
+               * positioning lines up with the visible mirror. */}
               <div
                 style={{
                   transform: `translate3d(0, ${-scrollTop}px, 0)`,
@@ -707,6 +743,29 @@ export function ChatInput() {
                    * line and keep the wrapper sized correctly. */}
                   {value.endsWith('\n') && '​'}
                 </div>
+
+                {/* Hidden measurement mirror — same wrap behavior as the
+                 * visible mirror. Renders text up to currentWord.start, then
+                 * a zero-width marker. The marker's bounding rect tells us
+                 * exactly where the trigger word begins on screen. */}
+                {showDropdown && (
+                  <div
+                    aria-hidden="true"
+                    className="
+                      absolute top-0 left-0 right-0
+                      whitespace-pre-wrap break-words px-[4px]
+                      text-[15px] leading-[24px] tracking-figma-tight
+                      pointer-events-none
+                    "
+                    style={{ visibility: 'hidden' }}
+                  >
+                    {value.slice(0, currentWord.start)}
+                    <span
+                      ref={wordMarkerRef}
+                      style={{ display: 'inline-block', width: 0 }}
+                    />
+                  </div>
+                )}
               </div>
 
               <textarea
@@ -832,7 +891,7 @@ function AttachmentTile({ attachment, onRemove, reduceMotion }: AttachmentTilePr
         <img
           src={attachment.url}
           alt=""
-          className="absolute inset-0 size-full object-cover pointer-events-none select-none"
+          className="absolute inset-0 size-full object-contain pointer-events-none select-none"
           draggable={false}
         />
       </div>
@@ -867,7 +926,9 @@ function AttachmentTile({ attachment, onRemove, reduceMotion }: AttachmentTilePr
         )}
       </AnimatePresence>
 
-      {/* Top-right indicator: progress ring (uploading) → close button (ready) */}
+      {/* Top-right indicator: progress ring (uploading) → close button (ready).
+       * The 2px top overhang matches Figma; the parent row provides pt-[3px]
+       * inside the overflow-hidden collapse wrapper so it isn't clipped. */}
       <div className="absolute -top-[2px] -right-[3px] w-[10px] h-[10px]">
         <AnimatePresence mode="popLayout" initial={false}>
           {isUploading ? (
