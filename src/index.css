@@ -43,10 +43,7 @@ body,
 
 body {
   margin: 0;
-  background:
-    radial-gradient(ellipse 80% 50% at 50% 0%, #f5f5f5 0%, transparent 60%),
-    radial-gradient(ellipse 60% 40% at 50% 100%, #f7f7f7 0%, transparent 60%),
-    #fafafa;
+  background: #ffffff;
   color: #0a0a0a;
 }
 

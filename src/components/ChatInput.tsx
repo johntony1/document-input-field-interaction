@@ -358,18 +358,24 @@ export function ChatInput() {
   }, [])
 
   // Measure mirror's natural content height and drive the wrapper height.
-  // Using ResizeObserver makes this robust to width changes (window resize)
-  // as well as content changes — and fires a single update per layout pass,
-  // so the CSS transition on .t-resize tweens cleanly between values.
+  // Re-measure after every render so any state-driven content change (typing,
+  // accepting a suggestion, paste) flows through to the height. ResizeObserver
+  // covers width changes (e.g. viewport resize) without re-render. The
+  // same-value short-circuit prevents loops.
   useLayoutEffect(() => {
     const el = mirrorRef.current
     if (!el) return
-    const measure = () => {
+    const next = Math.min(250, Math.max(24, el.offsetHeight))
+    setWrapperHeight((prev) => (prev === next ? prev : next))
+  })
+
+  useLayoutEffect(() => {
+    const el = mirrorRef.current
+    if (!el) return
+    const ro = new ResizeObserver(() => {
       const next = Math.min(250, Math.max(24, el.offsetHeight))
       setWrapperHeight((prev) => (prev === next ? prev : next))
-    }
-    measure()
-    const ro = new ResizeObserver(measure)
+    })
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
